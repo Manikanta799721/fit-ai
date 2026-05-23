@@ -1,8 +1,13 @@
+import os
+
+from dotenv import load_dotenv
 from passlib.context import CryptContext
 from jose import jwt
 from datetime import datetime, timedelta
 
-SECRET_KEY = "FITAI_SECRET"
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-before-deploying")
 ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

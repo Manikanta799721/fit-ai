@@ -1,83 +1,73 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./styles.css";
-import axios from "axios";
+import {
+  fetchRecommendations as getRecommendationResults,
+  fetchValues,
+  fetchWishlist,
+  getApiError,
+  loginUser,
+  removeWishlistItem,
+  saveWishlistItem,
+  signupUser,
+} from "./lib/api";
+import ProductCard from "./components/ProductCard";
+import { categoryCards, contactLinks, heroImages } from "./lib/catalog";
+import { cartStorageKey, normalizeEmail, readSavedJson, saveJson, wishlistStorageKey } from "./lib/storage";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
-
-const heroImages = [
-  "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=1200&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1496747611176-843222e1e57c?q=80&w=1200&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200&auto=format&fit=crop",
-  "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?q=80&w=1200&auto=format&fit=crop",
-];
-
-const categoryCards = [
-  {
-    title: "Topwear",
-    search: "Topwear",
-    type: "category",
-    image: "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Streetwear",
-    search: "streetwear",
-    type: "search",
-    image: "https://images.unsplash.com/photo-1541099649105-f69ad21f3246?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Luxury",
-    search: "Luxury",
-    type: "search",
-    image: "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Sneakers",
-    search: "Sneakers",
-    type: "search",
-    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    title: "Dresses",
-    search: "Dresses",
-    type: "category",
-    image: "https://images.unsplash.com/photo-1539008835657-9e8e9680c956?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Accessories",
-    search: "Accessories",
-    type: "category",
-    image: "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Activewear",
-    search: "Activewear",
-    type: "search",
-    image: "https://images.unsplash.com/photo-1506629905607-d9f297d6f5f3?q=80&w=1000&auto=format&fit=crop",
-  },
-  {
-    title: "Ethnic",
-    search: "Ethnic",
-    type: "search",
-    image: "https://images.unsplash.com/photo-1610030469983-98e550d6193c?q=80&w=1000&auto=format&fit=crop",
-  },
-];
-
-const readSavedJson = (key, fallback) => {
-  try {
-    const savedValue = localStorage.getItem(key);
-    return savedValue ? JSON.parse(savedValue) : fallback;
-  } catch {
-    return fallback;
+const getProductPrice = (item) => {
+  if (item.price) {
+    return item.price;
   }
+
+  const base = 899 + (Number(item.id) % 2400);
+  const premiumBoost = item.match ? item.match * 7 : 0;
+  return Math.round((base + premiumBoost) / 10) * 10 - 1;
 };
 
-const normalizeEmail = (email) => email.trim().toLowerCase();
-const wishlistStorageKey = (email) => `fitai-wishlist:${normalizeEmail(email)}`;
+const cartSubtotal = (items) =>
+  items.reduce((total, item) => total + item.price * item.quantity, 0);
 
-const contactLinks = {
-  email: "manikanta799721@gmail.com",
-  linkedin: "https://www.linkedin.com/in/manikanta-aatla-m16",
-  github: "https://github.com/Manikanta799721",
+const merchantName = "AATLA MANI KANTHA ESWAR REDDY";
+const fallbackUpiId = "fitai.demo@upi";
+const merchantQrImage = "/payment-qr.png";
+
+const demoProduct = {
+  id: -1,
+  image: "https://images.unsplash.com/photo-1523398002811-999ca8dec234?q=80&w=1000&auto=format&fit=crop",
+  productDisplayName: "FIT.AI Rs. 1 Payment Test Tee",
+  masterCategory: "Apparel",
+  subCategory: "Topwear",
+  articleType: "Tshirts",
+  baseColour: "Black",
+  season: "All Season",
+  gender: "Unisex",
+  brand: "FIT.AI Demo",
+  style: "Minimal",
+  vibe: "Checkout Test",
+  trend: "Demo Drop",
+  occasion: "Trial",
+  match: 99,
+  confidence: "Payment test",
+  isExactMatch: true,
+  aiReason: "A Rs. 1 demo item for testing checkout and QR payment flow.",
+  price: 1,
+  scoreBreakdown: {
+    profileFit: 99,
+    styleSignal: 99,
+    trendSignal: 99,
+  },
+};
+
+const buildUpiUrl = (amount) => {
+  const params = new URLSearchParams({
+    pa: fallbackUpiId,
+    pn: merchantName,
+    am: amount.toString(),
+    cu: "INR",
+    tn: `FIT.AI demo order Rs ${amount}`,
+  });
+
+  return `upi://pay?${params.toString()}`;
 };
 
 function App() {
@@ -89,6 +79,11 @@ function App() {
   const [season, setSeason] = useState("");
   const [category, setCategory] = useState("");
   const [search, setSearch] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [priceLimit, setPriceLimit] = useState(4500);
+  const [patternFilter, setPatternFilter] = useState("");
+  const [sortBy, setSortBy] = useState("recommended");
+  const [onlyExact, setOnlyExact] = useState(false);
 
   const [darkMode, setDarkMode] = useState(false);
 
@@ -106,7 +101,32 @@ function App() {
     const savedUser = readSavedJson("fitai-user", null);
     return savedUser?.email ? readSavedJson(wishlistStorageKey(savedUser.email), []) : [];
   });
+  const [cart, setCart] = useState(() => {
+    const savedUser = readSavedJson("fitai-user", null);
+    return savedUser?.email ? readSavedJson(cartStorageKey(savedUser.email), []) : [];
+  });
   const [showWishlist, setShowWishlist] = useState(false);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [activeProduct, setActiveProduct] = useState(null);
+  const [orderConfirmation, setOrderConfirmation] = useState(null);
+  const [checkoutStep, setCheckoutStep] = useState("address");
+  const [paymentMessage, setPaymentMessage] = useState("");
+  const [checkoutForm, setCheckoutForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    city: "",
+    pincode: "",
+    method: "upi",
+    upiId: "",
+    upiReference: "",
+    cardNumber: "",
+    cardName: "",
+    cardExpiry: "",
+    cardCvv: "",
+    codConfirmed: false,
+  });
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
   const [authMessage, setAuthMessage] = useState("");
@@ -130,7 +150,7 @@ function App() {
       return;
     }
 
-    localStorage.setItem(wishlistStorageKey(currentUser.email), JSON.stringify(wishlist));
+    saveJson(wishlistStorageKey(currentUser.email), wishlist);
 
   }, [wishlist, currentUser]);
 
@@ -139,14 +159,19 @@ function App() {
       return;
     }
 
-    const storageKey = wishlistStorageKey(currentUser.email);
+    saveJson(cartStorageKey(currentUser.email), cart);
+  }, [cart, currentUser]);
 
-    axios
-      .get(`${API_BASE_URL}/wishlist/${encodeURIComponent(currentUser.email)}`)
+  useEffect(() => {
+    if (!currentUser?.email) {
+      return;
+    }
+
+    const storageKey = wishlistStorageKey(currentUser.email);
+    fetchWishlist(currentUser.email)
       .then((response) => {
-        const serverWishlist = Array.isArray(response.data) ? response.data : [];
-        setWishlist(serverWishlist);
-        localStorage.setItem(storageKey, JSON.stringify(serverWishlist));
+        setWishlist(response);
+        saveJson(storageKey, response);
       })
       .catch(() => {
         const savedWishlist = readSavedJson(storageKey, []);
@@ -190,8 +215,7 @@ function App() {
 
   useEffect(() => {
 
-    fetch(`${API_BASE_URL}/values`)
-      .then((response) => response.json())
+    fetchValues()
       .then((data) => {
 
         setGenders(data.genders || []);
@@ -225,23 +249,15 @@ function App() {
 
     try {
 
-      const params = new URLSearchParams({
+      const params = {
         gender: selectedGender,
         colour: selectedColour,
         season: selectedSeason,
         category: selectedCategory,
         search: selectedSearch,
-      });
+      };
 
-      const response = await fetch(
-        `${API_BASE_URL}/recommend?${params.toString()}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Recommendation request failed");
-      }
-
-      const data = await response.json();
+      const data = await getRecommendationResults(params);
 
       setResults(data);
 
@@ -256,7 +272,7 @@ function App() {
     } catch (error) {
 
       console.log(error);
-      setError("Could not fetch recommendations. Please check the backend server.");
+      setError(getApiError(error, "Could not fetch recommendations. Please check the backend server."));
 
     } finally {
       setLoading(false);
@@ -275,6 +291,10 @@ function App() {
     setSeason("");
     setCategory("");
     setSearch("");
+    setPriceLimit(4500);
+    setPatternFilter("");
+    setSortBy("recommended");
+    setOnlyExact(false);
 
     setResults(null);
     setError("");
@@ -336,6 +356,7 @@ function App() {
 
   const openWishlist = () => {
     setShowWishlist(true);
+    setCartOpen(false);
 
     setTimeout(() => {
       wishlistRef.current?.scrollIntoView({
@@ -343,6 +364,11 @@ function App() {
         block: "start",
       });
     }, 100);
+  };
+
+  const openCart = () => {
+    setCartOpen(true);
+    setShowWishlist(false);
   };
 
   const openAuth = (mode) => {
@@ -389,16 +415,13 @@ function App() {
 
     if (authMode === "signup") {
 
-      const response = await axios.post(
-        "http://127.0.0.1:8000/signup",
-        {
-          username: authForm.name.trim(),
-          email,
-          password: authForm.password,
-        }
-      );
+      const response = await signupUser({
+        name: authForm.name.trim(),
+        email,
+        password: authForm.password,
+      });
 
-      setAuthMessage(response.data.message || "Signup successful. Login to continue.");
+      setAuthMessage(response.message || "Signup successful. Login to continue.");
 
       setTimeout(() => {
         setAuthMode("login");
@@ -407,34 +430,30 @@ function App() {
 
     } else {
 
-      const response = await axios.post(
-        "http://127.0.0.1:8000/login",
-        {
-          email,
-          password: authForm.password,
-        }
-      );
+      const response = await loginUser({
+        email,
+        password: authForm.password,
+      });
 
-      if (response.data.token) {
+      if (response.token) {
 
         localStorage.setItem(
           "fitai-token",
-          response.data.token
+          response.token
         );
 
         const user = {
-          name: response.data.username,
-          email: response.data.email || email,
+          name: response.username,
+          email: response.email || email,
         };
 
         setCurrentUser(user);
         setWishlist(readSavedJson(wishlistStorageKey(user.email), []));
+        setCart(readSavedJson(cartStorageKey(user.email), []));
+        setCartOpen(false);
         setShowWishlist(false);
 
-        localStorage.setItem(
-          "fitai-user",
-          JSON.stringify(user)
-        );
+        saveJson("fitai-user", user);
 
         setAuthMessage("Login successful.");
 
@@ -463,9 +482,7 @@ function App() {
     console.log(error);
 
     setAuthMessage(
-      error.response?.data?.detail ||
-      error.response?.data?.message ||
-      "Authentication failed. Please try again."
+      getApiError(error, "Authentication failed. Please try again.")
     );
 
   } finally {
@@ -477,6 +494,10 @@ function App() {
   const logout = () => {
     setCurrentUser(null);
     setWishlist([]);
+    setCart([]);
+    setCartOpen(false);
+    setCheckoutOpen(false);
+    setActiveProduct(null);
     setShowWishlist(false);
     localStorage.removeItem("fitai-user");
     localStorage.removeItem("fitai-token");
@@ -491,6 +512,8 @@ function App() {
 
     const alreadySaved = wishlist.some((product) => product.id === item.id);
 
+    const previousWishlist = wishlist;
+
     setWishlist((items) => {
       const exists = items.some((product) => product.id === item.id);
 
@@ -503,21 +526,224 @@ function App() {
 
     try {
       if (alreadySaved) {
-        await axios.delete(
-          `${API_BASE_URL}/wishlist/${encodeURIComponent(currentUser.email)}/${item.id}`
-        );
+        await removeWishlistItem(currentUser.email, item.id);
       } else {
-        await axios.post(`${API_BASE_URL}/save-wishlist`, {
-          email: currentUser.email,
-          product: item,
-        });
+        await saveWishlistItem(currentUser.email, item);
       }
     } catch (error) {
       console.log(error);
+      setWishlist(previousWishlist);
+      setError(getApiError(error, "Wishlist could not be updated. Please try again."));
     }
   };
 
+  const addToCart = (item) => {
+    const isDemoProduct = item.id === demoProduct.id;
+
+    if (!currentUser && !isDemoProduct) {
+      openAuth("login");
+      setAuthMessage("Login first to add items to your bag.");
+      return;
+    }
+
+    const pricedItem = {
+      ...item,
+      price: item.price || getProductPrice(item),
+    };
+
+    setCart((items) => {
+      const exists = items.some((product) => product.id === item.id);
+
+      if (exists) {
+        return items.map((product) =>
+          product.id === item.id
+            ? { ...product, quantity: product.quantity + 1 }
+            : product
+        );
+      }
+
+      return [{ ...pricedItem, quantity: 1, size: "M" }, ...items];
+    });
+
+    setCartOpen(true);
+    setShowWishlist(false);
+  };
+
+  const updateCartQuantity = (id, quantity) => {
+    setCart((items) =>
+      items
+        .map((item) =>
+          item.id === id
+            ? { ...item, quantity: Math.max(1, quantity) }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
+    );
+  };
+
+  const removeFromCart = (id) => {
+    setCart((items) => items.filter((item) => item.id !== id));
+  };
+
+  const startCheckout = () => {
+    const isDemoCheckout = cart.length > 0 && cart.every((item) => item.id === demoProduct.id);
+
+    if (!currentUser && !isDemoCheckout) {
+      openAuth("login");
+      setAuthMessage("Login first to checkout.");
+      return;
+    }
+
+    setCheckoutOpen(true);
+    setOrderConfirmation(null);
+    setCheckoutStep("address");
+    setPaymentMessage("");
+  };
+
+  const addDemoProduct = () => {
+    addToCart(demoProduct);
+  };
+
+  const resetPaymentFields = (method) => {
+    setCheckoutForm((form) => ({
+      ...form,
+      method,
+      upiId: "",
+      upiReference: "",
+      cardNumber: "",
+      cardName: "",
+      cardExpiry: "",
+      cardCvv: "",
+      codConfirmed: false,
+    }));
+    setPaymentMessage("");
+  };
+
+  const placeOrder = (event) => {
+    event.preventDefault();
+
+    if (!checkoutForm.name || !checkoutForm.phone || !checkoutForm.address || !checkoutForm.city || !checkoutForm.pincode) {
+      setPaymentMessage("Please complete delivery details before payment.");
+      return;
+    }
+
+    if (checkoutStep === "address") {
+      setCheckoutStep("payment");
+      setPaymentMessage("");
+      return;
+    }
+
+    if (checkoutForm.method === "upi") {
+      const hasUpiId = checkoutForm.upiId.trim().includes("@");
+      const hasReference = checkoutForm.upiReference.trim().length >= 6;
+
+      if (!hasUpiId && !hasReference) {
+        setPaymentMessage("Scan the PhonePe QR and enter a 6+ character reference ID, or enter a valid UPI ID.");
+        return;
+      }
+    }
+
+    if (checkoutForm.method === "card") {
+      const cardNumber = checkoutForm.cardNumber.replace(/\s/g, "");
+      const expiryOk = /^(0[1-9]|1[0-2])\/\d{2}$/.test(checkoutForm.cardExpiry);
+      const cvvOk = /^\d{3,4}$/.test(checkoutForm.cardCvv);
+
+      if (cardNumber.length < 12 || !checkoutForm.cardName.trim() || !expiryOk || !cvvOk) {
+        setPaymentMessage("Enter valid card number, cardholder name, MM/YY expiry and CVV.");
+        return;
+      }
+    }
+
+    if (checkoutForm.method === "cod" && !checkoutForm.codConfirmed) {
+      setPaymentMessage("Confirm cash on delivery to place this order.");
+      return;
+    }
+
+    setOrderConfirmation({
+      id: `FIT${String(cartCount).padStart(2, "0")}${String(grandTotal).padStart(4, "0")}`,
+      amount: grandTotal,
+      method: checkoutForm.method === "upi"
+        ? "UPI"
+        : checkoutForm.method === "card" ? "Card" : "Cash on Delivery",
+      name: checkoutForm.name,
+      city: checkoutForm.city,
+    });
+    setCart([]);
+    setCheckoutOpen(false);
+    setCartOpen(false);
+    setPaymentMessage("");
+  };
+
   const isWishlisted = (id) => wishlist.some((item) => item.id === id);
+  const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const subtotal = cartSubtotal(cart);
+  const demoOnlyOrder = cart.length > 0 && cart.every((item) => item.id === demoProduct.id);
+  const deliveryFee = demoOnlyOrder || subtotal > 2499 || subtotal === 0 ? 0 : 79;
+  const platformFee = subtotal > 0 && !demoOnlyOrder ? 19 : 0;
+  const grandTotal = subtotal + deliveryFee + platformFee;
+  const upiUrl = buildUpiUrl(grandTotal || 1);
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}`;
+  const paymentButtonText = checkoutStep === "address"
+    ? "Continue to Payment"
+    : checkoutForm.method === "upi"
+      ? "Verify UPI Payment"
+      : checkoutForm.method === "card"
+        ? `Pay Rs. ${grandTotal}`
+        : "Place COD Order";
+  const patternOptions = useMemo(() => {
+    if (!results) {
+      return [];
+    }
+
+    const values = results.flatMap((item) => [
+      item.style,
+      item.vibe,
+      item.trend,
+      item.occasion,
+      item.articleType,
+    ]);
+
+    return [...new Set(values.filter(Boolean))].slice(0, 16);
+  }, [results]);
+  const displayResults = useMemo(() => {
+    if (!results) {
+      return results;
+    }
+
+    const selectedPattern = patternFilter.toLowerCase();
+
+    return results
+      .map((item) => ({
+        ...item,
+        price: getProductPrice(item),
+      }))
+      .filter((item) => item.price <= priceLimit)
+      .filter((item) => !onlyExact || item.isExactMatch)
+      .filter((item) => {
+        if (!selectedPattern) {
+          return true;
+        }
+
+        return [item.style, item.vibe, item.trend, item.occasion, item.articleType]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase() === selectedPattern);
+      })
+      .sort((first, second) => {
+        if (sortBy === "price-low") {
+          return first.price - second.price;
+        }
+
+        if (sortBy === "price-high") {
+          return second.price - first.price;
+        }
+
+        if (sortBy === "match") {
+          return second.match - first.match;
+        }
+
+        return 0;
+      });
+  }, [results, priceLimit, patternFilter, sortBy, onlyExact]);
 
   return (
 
@@ -568,6 +794,20 @@ function App() {
             Wishlist ({wishlist.length})
           </button>
 
+          <button
+            className="nav-action cart-nav"
+            onClick={openCart}
+          >
+            Bag ({cartCount})
+          </button>
+
+          <button
+            className="nav-action"
+            onClick={addDemoProduct}
+          >
+            Rs. 1 Test
+          </button>
+
           {currentUser ? (
             <div className="user-menu">
               <span>{currentUser.name}</span>
@@ -585,7 +825,7 @@ function App() {
             onClick={() => setDarkMode(!darkMode)}
           >
 
-            {darkMode ? "☀️ Light" : "🌙 Dark"}
+            {darkMode ? "Light mode" : "Dark mode"}
 
           </button>
 
@@ -868,6 +1108,89 @@ function App() {
           AI Recommended Fits
         </h2>
 
+        {results && (
+          <div className="shop-filter-shell">
+            <div className="shop-filter-top">
+              <div>
+                <p className="mini-title">SHOPPING FILTERS</p>
+                <strong>{displayResults.length} of {results.length} styles</strong>
+              </div>
+
+              <button
+                type="button"
+                className="filter-toggle"
+                onClick={() => setFiltersOpen(!filtersOpen)}
+              >
+                {filtersOpen ? "Hide Filters" : "Filter"}
+              </button>
+            </div>
+
+            <div className={`shop-filters ${filtersOpen ? "open" : ""}`}>
+              <label>
+                <span>Max price: Rs. {priceLimit}</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="4500"
+                  step="100"
+                  value={priceLimit}
+                  onChange={(event) => setPriceLimit(Number(event.target.value))}
+                />
+              </label>
+
+              <label>
+                <span>Pattern / vibe</span>
+                <select
+                  value={patternFilter}
+                  onChange={(event) => setPatternFilter(event.target.value)}
+                >
+                  <option value="">All patterns</option>
+                  {patternOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                <span>Sort by</span>
+                <select
+                  value={sortBy}
+                  onChange={(event) => setSortBy(event.target.value)}
+                >
+                  <option value="recommended">Recommended</option>
+                  <option value="match">Best match</option>
+                  <option value="price-low">Price: low to high</option>
+                  <option value="price-high">Price: high to low</option>
+                </select>
+              </label>
+
+              <label className="exact-toggle">
+                <input
+                  type="checkbox"
+                  checked={onlyExact}
+                  onChange={(event) => setOnlyExact(event.target.checked)}
+                />
+                <span>Exact matches only</span>
+              </label>
+
+              <button
+                type="button"
+                className="filter-clear"
+                onClick={() => {
+                  setPriceLimit(4500);
+                  setPatternFilter("");
+                  setSortBy("recommended");
+                  setOnlyExact(false);
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="products-grid">
             {Array.from({ length: 8 }).map((_, index) => (
@@ -880,12 +1203,12 @@ function App() {
               </div>
             ))}
           </div>
-        ) : results === null ? null : results.length === 0 ? (
+        ) : results === null ? null : displayResults.length === 0 ? (
 
           <div className="no-results">
 
             <h2>
-              No Results Found 😔
+              No Results Found
             </h2>
 
             <p>
@@ -899,71 +1222,16 @@ function App() {
 
           <div className="products-grid">
 
-            {results.map((item, index) => (
-
-              <div
-                className="product-card"
-                key={index}
-              >
-
-                <div className="image-container">
-
-                  <img
-                    src={item.image}
-                    alt={item.productDisplayName}
-                    loading="lazy"
-                    onError={handleImageError}
-                  />
-
-                </div>
-
-                <div className="product-info">
-
-                  <div className="match-badge">
-                    {item.match}% Match
-                  </div>
-
-                  <h3>
-                    {item.productDisplayName}
-                  </h3>
-
-                  <p>
-                    {item.subCategory || item.articleType} · {item.articleType}
-                  </p>
-
-                  <p>
-                    {item.baseColour}
-                  </p>
-
-                  <p>
-                    {item.brand} · {item.season}
-                  </p>
-
-                  <div className="ai-reason">
-                    {item.aiReason}
-                  </div>
-
-                  <div className="score-bars">
-                    <span style={{ width: `${item.scoreBreakdown?.profileFit || item.match}%` }} />
-                  </div>
-
-                  <div className="product-tags">
-                    <span>{item.style}</span>
-                    <span>{item.vibe}</span>
-                    <span>{item.trend}</span>
-                  </div>
-
-                  <button
-                    className={`wishlist-btn ${isWishlisted(item.id) ? "saved" : ""}`}
-                    onClick={() => toggleWishlist(item)}
-                  >
-                    {isWishlisted(item.id) ? "Saved to Wishlist" : "♡ Wishlist"}
-                  </button>
-
-                </div>
-
-              </div>
-
+            {displayResults.map((item) => (
+              <ProductCard
+                item={item}
+                key={item.id}
+                onAddToCart={addToCart}
+                onImageClick={setActiveProduct}
+                isSaved={isWishlisted(item.id)}
+                onImageError={handleImageError}
+                onWishlistToggle={toggleWishlist}
+              />
             ))}
 
           </div>
@@ -996,46 +1264,366 @@ function App() {
           ) : (
             <div className="products-grid">
               {wishlist.map((item) => (
-                <div
-                  className="product-card"
+                <ProductCard
+                  item={item}
                   key={item.id}
-                >
-                  <div className="image-container">
-                    <img
-                      src={item.image}
-                      alt={item.productDisplayName}
-                      loading="lazy"
-                      onError={handleImageError}
-                    />
-                  </div>
-
-                  <div className="product-info">
-                    <div className="match-badge">
-                      Saved
-                    </div>
-
-                    <h3>{item.productDisplayName}</h3>
-                    <p>{item.articleType}</p>
-                    <p>{item.baseColour}</p>
-                    <p>{item.brand} · {item.season}</p>
-                    {item.aiReason && (
-                      <div className="ai-reason">
-                        {item.aiReason}
-                      </div>
-                    )}
-
-                    <button
-                      className="wishlist-btn saved"
-                      onClick={() => toggleWishlist(item)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
+                  variant="wishlist"
+                  isSaved
+                  onAddToCart={addToCart}
+                  onImageClick={setActiveProduct}
+                  onImageError={handleImageError}
+                  onWishlistToggle={toggleWishlist}
+                />
               ))}
             </div>
           )}
         </section>
+      )}
+
+      {cartOpen && (
+        <aside className="cart-drawer" aria-label="Shopping bag">
+          <div className="cart-header">
+            <div>
+              <p className="mini-title">SHOPPING BAG</p>
+              <h2>{cartCount} Item{cartCount === 1 ? "" : "s"}</h2>
+            </div>
+            <button onClick={() => setCartOpen(false)} aria-label="Close bag">
+              ×
+            </button>
+          </div>
+
+          {cart.length === 0 ? (
+            <div className="cart-empty">
+              <h3>Your bag is empty</h3>
+              <p>Add recommended styles and checkout with a demo payment flow.</p>
+              <button className="demo-product-btn" onClick={addDemoProduct}>
+                Add Rs. 1 Test Product
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="cart-items">
+                {cart.map((item) => (
+                  <div className="cart-item" key={item.id}>
+                    <img
+                      src={item.image}
+                      alt={item.productDisplayName}
+                      onError={handleImageError}
+                    />
+                    <div>
+                      <h3>{item.productDisplayName}</h3>
+                      <p>{item.brand} · {item.baseColour}</p>
+                      <strong>Rs. {item.price}</strong>
+                      <div className="qty-control">
+                        <button onClick={() => updateCartQuantity(item.id, item.quantity - 1)}>-</button>
+                        <span>{item.quantity}</span>
+                        <button onClick={() => updateCartQuantity(item.id, item.quantity + 1)}>+</button>
+                      </div>
+                    </div>
+                    <button
+                      className="remove-cart"
+                      onClick={() => removeFromCart(item.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="price-box">
+                <div>
+                  <span>Subtotal</span>
+                  <strong>Rs. {subtotal}</strong>
+                </div>
+                <div>
+                  <span>Delivery</span>
+                  <strong>{deliveryFee === 0 ? "Free" : `Rs. ${deliveryFee}`}</strong>
+                </div>
+                <div>
+                  <span>Platform fee</span>
+                  <strong>Rs. {platformFee}</strong>
+                </div>
+                <div className="price-total">
+                  <span>Total</span>
+                  <strong>Rs. {grandTotal}</strong>
+                </div>
+              </div>
+
+              <button className="checkout-btn" onClick={startCheckout}>
+                Checkout Securely
+              </button>
+            </>
+          )}
+        </aside>
+      )}
+
+      {activeProduct && (
+        <div className="product-preview-overlay" onClick={() => setActiveProduct(null)}>
+          <div className="product-preview" onClick={(event) => event.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => setActiveProduct(null)}
+              aria-label="Close product preview"
+            >
+              ×
+            </button>
+            <img
+              src={activeProduct.image}
+              alt={activeProduct.productDisplayName}
+              onError={handleImageError}
+            />
+            <div>
+              <p className="mini-title">QUICK VIEW</p>
+              <h2>{activeProduct.productDisplayName}</h2>
+              <p>{activeProduct.aiReason}</p>
+              <div className="preview-meta">
+                <span>{activeProduct.brand}</span>
+                <span>{activeProduct.baseColour}</span>
+                <span>{activeProduct.season}</span>
+                <span>{activeProduct.match}% Match</span>
+              </div>
+              <strong className="preview-price">Rs. {getProductPrice(activeProduct)}</strong>
+              <div className="preview-actions">
+                <button onClick={() => toggleWishlist(activeProduct)}>
+                  {isWishlisted(activeProduct.id) ? "Saved" : "Wishlist"}
+                </button>
+                <button onClick={() => addToCart(activeProduct)}>
+                  Add to Bag
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {checkoutOpen && (
+        <div className="auth-overlay">
+          <div className="checkout-modal">
+            <button
+              className="modal-close"
+              onClick={() => setCheckoutOpen(false)}
+              aria-label="Close checkout"
+            >
+              ×
+            </button>
+
+            <p className="mini-title">SECURE CHECKOUT</p>
+            <h2>{checkoutStep === "address" ? "Delivery Details" : "Payment"}</h2>
+
+            <form onSubmit={placeOrder}>
+              {checkoutStep === "address" ? (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Full name"
+                    value={checkoutForm.name}
+                    onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })}
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Mobile number"
+                    value={checkoutForm.phone}
+                    onChange={(event) => setCheckoutForm({ ...checkoutForm, phone: event.target.value })}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Address"
+                    value={checkoutForm.address}
+                    onChange={(event) => setCheckoutForm({ ...checkoutForm, address: event.target.value })}
+                  />
+                  <div className="checkout-grid">
+                    <input
+                      type="text"
+                      placeholder="City"
+                      value={checkoutForm.city}
+                      onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Pincode"
+                      value={checkoutForm.pincode}
+                      onChange={(event) => setCheckoutForm({ ...checkoutForm, pincode: event.target.value })}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="delivery-summary">
+                  <span>Delivering to</span>
+                  <strong>{checkoutForm.name} · {checkoutForm.phone}</strong>
+                  <p>{checkoutForm.address}, {checkoutForm.city} - {checkoutForm.pincode}</p>
+                </div>
+              )}
+
+              {checkoutStep === "payment" && (
+                <div className="payment-panel">
+                  <div className="payment-panel-header">
+                    <div>
+                      <span>Payment method</span>
+                      <strong>Choose how you want to pay</strong>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCheckoutStep("address")}
+                    >
+                      Edit address
+                    </button>
+                  </div>
+
+                  <div className="payment-methods">
+                    {["upi", "card", "cod"].map((method) => (
+                      <button
+                        type="button"
+                        className={checkoutForm.method === method ? "active" : ""}
+                        key={method}
+                        onClick={() => resetPaymentFields(method)}
+                      >
+                        <span>{method === "upi" ? "UPI" : method === "card" ? "Card" : "Cash"}</span>
+                        <small>
+                          {method === "upi"
+                            ? "QR / UPI ID"
+                            : method === "card" ? "Credit / Debit" : "Pay on delivery"}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+
+                  {checkoutForm.method === "upi" && (
+                    <div className="upi-payment-box">
+                      <div className="upi-qr">
+                        <img
+                          src={merchantQrImage}
+                          alt={`UPI QR code to pay Rs. ${grandTotal}`}
+                          onError={(event) => {
+                            event.currentTarget.src = qrCodeUrl;
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <strong>Scan and pay Rs. {grandTotal}</strong>
+                        <p>PhonePe QR: {merchantName}</p>
+                        <a href={upiUrl}>Open demo UPI link</a>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Your UPI ID, e.g. name@bank"
+                        value={checkoutForm.upiId}
+                        onChange={(event) => setCheckoutForm({ ...checkoutForm, upiId: event.target.value })}
+                      />
+                      <input
+                        type="text"
+                        placeholder="UPI reference ID after payment"
+                        value={checkoutForm.upiReference}
+                        onChange={(event) => setCheckoutForm({ ...checkoutForm, upiReference: event.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  {checkoutForm.method === "card" && (
+                    <div className="card-payment-box">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Card number"
+                        maxLength="19"
+                        value={checkoutForm.cardNumber}
+                        onChange={(event) => setCheckoutForm({ ...checkoutForm, cardNumber: event.target.value.replace(/[^\d\s]/g, "") })}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Name on card"
+                        value={checkoutForm.cardName}
+                        onChange={(event) => setCheckoutForm({ ...checkoutForm, cardName: event.target.value })}
+                      />
+                      <div className="checkout-grid">
+                        <input
+                          type="text"
+                          placeholder="MM/YY"
+                          maxLength="5"
+                          value={checkoutForm.cardExpiry}
+                          onChange={(event) => setCheckoutForm({ ...checkoutForm, cardExpiry: event.target.value })}
+                        />
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          placeholder="CVV"
+                          maxLength="4"
+                          value={checkoutForm.cardCvv}
+                          onChange={(event) => setCheckoutForm({ ...checkoutForm, cardCvv: event.target.value.replace(/\D/g, "") })}
+                        />
+                      </div>
+                      <p>Card payments are validated in demo mode. Connect Razorpay, Stripe, or Cashfree before accepting live cards.</p>
+                    </div>
+                  )}
+
+                  {checkoutForm.method === "cod" && (
+                    <label className="cod-payment-box">
+                      <input
+                        type="checkbox"
+                        checked={checkoutForm.codConfirmed}
+                        onChange={(event) => setCheckoutForm({ ...checkoutForm, codConfirmed: event.target.checked })}
+                      />
+                      <span>
+                        I will pay Rs. {grandTotal} in cash when the order is delivered.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+
+              <div className="price-box compact">
+                <div className="price-total">
+                  <span>Payable</span>
+                  <strong>Rs. {grandTotal}</strong>
+                </div>
+              </div>
+
+              {paymentMessage && <p className="auth-message">{paymentMessage}</p>}
+
+              <button type="submit">
+                {paymentButtonText}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {orderConfirmation && (
+        <div className="auth-overlay">
+          <div className="order-placed-modal">
+            <div className="order-checkmark">✓</div>
+            <p className="mini-title">ORDER CONFIRMED</p>
+            <h2>Order Placed</h2>
+            <p>
+              Thanks {orderConfirmation.name}. Your FIT.AI order has been placed successfully.
+            </p>
+
+            <div className="order-summary-box">
+              <div>
+                <span>Order ID</span>
+                <strong>{orderConfirmation.id}</strong>
+              </div>
+              <div>
+                <span>Payment</span>
+                <strong>{orderConfirmation.method}</strong>
+              </div>
+              <div>
+                <span>Total</span>
+                <strong>Rs. {orderConfirmation.amount}</strong>
+              </div>
+              <div>
+                <span>Delivery city</span>
+                <strong>{orderConfirmation.city}</strong>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setOrderConfirmation(null)}
+            >
+              Continue Shopping
+            </button>
+          </div>
+        </div>
       )}
 
       <footer className="site-footer">
@@ -1051,6 +1639,9 @@ function App() {
         <div className="footer-links">
           <a href={`mailto:${contactLinks.email}`}>
             Mail
+          </a>
+          <a href={`tel:+91${contactLinks.phone}`}>
+            Contact Us
           </a>
           <a
             href={contactLinks.linkedin}

@@ -1,0 +1,6 @@
+Put your real UPI QR image in this folder as:
+
+payment-qr.png
+
+The checkout will show that image first. If it is missing, the app falls back
+to a generated demo QR from the configured UPI ID in src/App.jsx.
