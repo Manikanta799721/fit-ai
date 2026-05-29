@@ -1650,11 +1650,42 @@ body.light-mode .cart-item {
   border-color: #e5e7eb;
 }
 
+.cart-product-trigger {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.cart-image-trigger {
+  flex: 0 0 auto;
+  border-radius: 12px;
+}
+
+.cart-image-trigger:focus-visible,
+.cart-title-trigger:focus-visible {
+  outline: 3px solid #d9ff6e;
+  outline-offset: 3px;
+}
+
 .cart-item img {
   width: 76px;
   height: 96px;
   border-radius: 12px;
   object-fit: cover;
+  transition: transform 0.2s ease;
+}
+
+.cart-image-trigger:hover img {
+  transform: scale(1.03);
+}
+
+.cart-title-trigger:hover h3 {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .cart-item h3 {

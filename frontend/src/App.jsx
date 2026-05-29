@@ -569,12 +569,19 @@ function App() {
     setShowWishlist(false);
   };
 
+  const openProductPreview = (item) => {
+    setActiveProduct({
+      ...item,
+      price: item.price || getProductPrice(item),
+    });
+  };
+
   const updateCartQuantity = (id, quantity) => {
     setCart((items) =>
       items
         .map((item) =>
           item.id === id
-            ? { ...item, quantity: Math.max(1, quantity) }
+            ? { ...item, quantity }
             : item
         )
         .filter((item) => item.quantity > 0)
@@ -1227,7 +1234,7 @@ function App() {
                 item={item}
                 key={item.id}
                 onAddToCart={addToCart}
-                onImageClick={setActiveProduct}
+                onImageClick={openProductPreview}
                 isSaved={isWishlisted(item.id)}
                 onImageError={handleImageError}
                 onWishlistToggle={toggleWishlist}
@@ -1270,7 +1277,7 @@ function App() {
                   variant="wishlist"
                   isSaved
                   onAddToCart={addToCart}
-                  onImageClick={setActiveProduct}
+                  onImageClick={openProductPreview}
                   onImageError={handleImageError}
                   onWishlistToggle={toggleWishlist}
                 />
@@ -1305,19 +1312,44 @@ function App() {
               <div className="cart-items">
                 {cart.map((item) => (
                   <div className="cart-item" key={item.id}>
-                    <img
-                      src={item.image}
-                      alt={item.productDisplayName}
-                      onError={handleImageError}
-                    />
+                    <button
+                      type="button"
+                      className="cart-product-trigger cart-image-trigger"
+                      onClick={() => openProductPreview(item)}
+                      aria-label={`Open ${item.productDisplayName} details`}
+                    >
+                      <img
+                        src={item.image}
+                        alt={item.productDisplayName}
+                        onError={handleImageError}
+                      />
+                    </button>
                     <div>
-                      <h3>{item.productDisplayName}</h3>
+                      <button
+                        type="button"
+                        className="cart-product-trigger cart-title-trigger"
+                        onClick={() => openProductPreview(item)}
+                      >
+                        <h3>{item.productDisplayName}</h3>
+                      </button>
                       <p>{item.brand} · {item.baseColour}</p>
                       <strong>Rs. {item.price}</strong>
                       <div className="qty-control">
-                        <button onClick={() => updateCartQuantity(item.id, item.quantity - 1)}>-</button>
+                        <button
+                          type="button"
+                          onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                          aria-label={`Decrease ${item.productDisplayName} quantity`}
+                        >
+                          -
+                        </button>
                         <span>{item.quantity}</span>
-                        <button onClick={() => updateCartQuantity(item.id, item.quantity + 1)}>+</button>
+                        <button
+                          type="button"
+                          onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                          aria-label={`Increase ${item.productDisplayName} quantity`}
+                        >
+                          +
+                        </button>
                       </div>
                     </div>
                     <button
