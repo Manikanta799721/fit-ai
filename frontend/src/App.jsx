@@ -141,6 +141,7 @@ function App() {
   const productsRef = useRef(null);
   const searchRef = useRef(null);
   const wishlistRef = useRef(null);
+  const cartDrawerRef = useRef(null);
 
   const [currentHero, setCurrentHero] = useState(0);
 
@@ -567,6 +568,12 @@ function App() {
 
     setCartOpen(true);
     setShowWishlist(false);
+    setCheckoutOpen(false);
+    setActiveProduct(null);
+
+    requestAnimationFrame(() => {
+      cartDrawerRef.current?.focus();
+    });
   };
 
   const openProductPreview = (item) => {
@@ -1288,7 +1295,12 @@ function App() {
       )}
 
       {cartOpen && (
-        <aside className="cart-drawer" aria-label="Shopping bag">
+        <aside
+          className="cart-drawer"
+          aria-label="Shopping bag"
+          ref={cartDrawerRef}
+          tabIndex="-1"
+        >
           <div className="cart-header">
             <div>
               <p className="mini-title">SHOPPING BAG</p>
