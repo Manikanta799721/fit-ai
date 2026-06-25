@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from database import wishlist_collection
@@ -186,10 +187,20 @@ def get_values():
 
 @app.get("/recommend")
 def recommend(
+    request: Request,
     gender: str = "",
     colour: str = "",
     season: str = "",
     category: str = "",
     search: str = ""
 ):
-    return recommend_products(df, gender, colour, season, category, search)
+    image_base_url = str(request.base_url).rstrip("/")
+    return recommend_products(
+        df,
+        gender,
+        colour,
+        season,
+        category,
+        search,
+        image_base_url=image_base_url,
+    )

@@ -184,7 +184,7 @@ def apply_exact_filters(catalog, filters):
     return filtered
 
 
-def product_image(row):
+def product_image(row, image_base_url=""):
     image_url = str(row.get("image_url", "")).strip()
 
     if image_url and image_url.lower() != "nan":
@@ -192,7 +192,7 @@ def product_image(row):
 
     image_path = BASE_DIR / "images" / f"{row['id']}.jpg"
     if image_path.exists():
-        return f"http://127.0.0.1:8000/images/{row['id']}.jpg"
+        return f"{image_base_url.rstrip('/')}/images/{row['id']}.jpg"
 
     sub_category = normalize(row.get("subCategory", ""))
     article_type = normalize(row.get("articleType", ""))
@@ -236,14 +236,14 @@ def ai_reason(row, filters, exact_match):
     return f"{prefix} for {', '.join(signals[:3])} with a {row.get('vibe', 'fresh')} mood."
 
 
-def serialize_product(row, filters, exact_ids):
+def serialize_product(row, filters, exact_ids, image_base_url=""):
     raw_score = int(row.get("_score", 0))
     match = max(68, min(99, 66 + raw_score // 2))
     exact_match = int(row["id"]) in exact_ids
 
     return {
         "id": int(row["id"]),
-        "image": product_image(row),
+        "image": product_image(row, image_base_url),
         "productDisplayName": row["productDisplayName"],
         "masterCategory": row["masterCategory"],
         "subCategory": row["subCategory"],
@@ -268,7 +268,7 @@ def serialize_product(row, filters, exact_ids):
     }
 
 
-def recommend_products(catalog, gender="", colour="", season="", category="", search="", limit=20):
+def recommend_products(catalog, gender="", colour="", season="", category="", search="", limit=20, image_base_url=""):
     filters = {
         "gender": normalize(gender),
         "colour": normalize(colour),
@@ -295,6 +295,6 @@ def recommend_products(catalog, gender="", colour="", season="", category="", se
         exact = scored.sort_values(["_score", "id"], ascending=[False, False])
 
     return [
-        serialize_product(row, filters, exact_ids)
+        serialize_product(row, filters, exact_ids, image_base_url)
         for _, row in exact.head(limit).iterrows()
     ]
