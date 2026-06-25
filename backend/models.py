@@ -11,6 +11,8 @@ def normalize_email(value: str):
 def validate_password(value: str):
     if len(value.strip()) < 6:
         raise ValueError("Password must be at least 6 characters")
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Password cannot be longer than 72 bytes")
     return value
 
 
@@ -51,4 +53,6 @@ class UserLogin(BaseModel):
     def password_required(cls, value):
         if not value:
             raise ValueError("Password is required")
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password cannot be longer than 72 bytes")
         return value
